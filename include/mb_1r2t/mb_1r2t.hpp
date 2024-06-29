@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#define SAMPLES_PER_SCAN 500
+
 class MB_1r2t : public rclcpp::Node {
 public:
     MB_1r2t();

@@ -3,6 +3,7 @@
 #include <geometry_msgs/msg/point32.hpp>
 
 #include <algorithm>
+#include <limits>
 
 MB_1r2t::MB_1r2t()
     : rclcpp::Node("mb_1r2t_node")
@@ -23,6 +24,8 @@ MB_1r2t::MB_1r2t()
 
     m_laser_scan_msg.range_min = RANGE_MIN;
     m_laser_scan_msg.range_max = RANGE_MAX;
+    m_laser_scan_msg.ranges.assign(SAMPLES_PER_SCAN, HUGE_VAL);
+    m_laser_scan_msg.intensities.assign(SAMPLES_PER_SCAN, 0.0);
 
     m_laser_scan_msg.header.frame_id = m_frame_id;
     m_point_cloud_msg.header.frame_id = m_frame_id;
@@ -39,37 +42,35 @@ void MB_1r2t::publish_loop()
 
 void MB_1r2t::publish_laser_scan()
 {
-    std::sort(m_scan_results.begin(), m_scan_results.end(), [](const ScanResult& a, const ScanResult& b) {
+    auto [min_angle_scan, max_angle_scan] = std::minmax_element(m_scan_results.begin(), m_scan_results.end(), [](const ScanResult& a, const ScanResult& b) {
         return a.angle < b.angle;
     });
+    float min_angle = min_angle_scan->angle, max_angle = max_angle_scan->angle;
 
-    float avg_increment = 0;
-    float min_angle = m_scan_results[0].angle;
-    float max_angle = m_scan_results[m_scan_results.size() - 1].angle;
-
-    for (size_t i = 1; i < m_scan_results.size(); ++i) {
-        avg_increment += m_scan_results[i].angle - m_scan_results[i - 1].angle;
-    }
-    avg_increment /= (float)(m_scan_results.size() - 1);
+    RCLCPP_DEBUG(get_logger(), "start: %f, end: %f, size: %d", min_angle, max_angle, m_scan_results.size());
 
     for (ScanResult& s : m_scan_results) {
-        m_laser_scan_msg.ranges.emplace_back(s.distance);
-        m_laser_scan_msg.intensities.emplace_back(s.distance);
+        int i = (s.angle - min_angle) / (max_angle - min_angle) * (float)SAMPLES_PER_SCAN;
+        if (s.distance < m_laser_scan_msg.ranges[i]) {
+            // TODO: use interpolation instead of assigning the distance from a single point
+            m_laser_scan_msg.ranges[i] = s.distance;
+            m_laser_scan_msg.intensities[i] = s.intensity;
+        }
     }
 
     rclcpp::Duration scan_time = now() - m_last_scan_time;
 
     m_laser_scan_msg.scan_time = scan_time.seconds();
-    m_laser_scan_msg.time_increment = scan_time.seconds() / (float)m_scan_results.size();
+    m_laser_scan_msg.time_increment = scan_time.seconds() / (float)(SAMPLES_PER_SCAN - 1);
     m_laser_scan_msg.angle_min = min_angle;
     m_laser_scan_msg.angle_max = max_angle;
-    m_laser_scan_msg.angle_increment = avg_increment;
+    m_laser_scan_msg.angle_increment = (max_angle - min_angle) / (float)(SAMPLES_PER_SCAN - 1);
 
     m_laser_scan_publisher->publish(m_laser_scan_msg);
 
     m_scan_results.clear();
-    m_laser_scan_msg.ranges.clear();
-    m_laser_scan_msg.intensities.clear();
+    m_laser_scan_msg.ranges.assign(SAMPLES_PER_SCAN, HUGE_VAL);
+    m_laser_scan_msg.intensities.assign(SAMPLES_PER_SCAN, 0.0);
 }
 
 void MB_1r2t::publish_point_cloud()
