@@ -37,8 +37,7 @@ private:
     };
 
     enum PacketType {
-        SCAN_DONE = 0x91,
-        SCAN_DATA = 0x2C
+        SCAN_DATA = 0x28
     };
 
     struct Packet {

@@ -92,7 +92,6 @@ void MB_1r2t::scan_done()
 
 void MB_1r2t::scan_data()
 {
-    // TODO: search datasheet to verify this
     int16_t diff = m_packet.stop_angle - m_packet.start_angle;
     if (m_packet.stop_angle < m_packet.start_angle) {
         diff = 0xB400 - m_packet.start_angle + m_packet.stop_angle;
@@ -189,13 +188,19 @@ void MB_1r2t::parse_packet()
             break;
         }
 
-        if (m_packet.type == SCAN_DONE) {
+        if (m_packet.type & 0x01) {
             scan_done();
-        } else if (m_packet.type == SCAN_DATA) {
-            scan_data();
+            // stored in units of 0.1 Hz
+            uint8_t scan_freq = m_packet.type >> 1;
+            RCLCPP_DEBUG(
+                get_logger(), "Scanning frequency: %d.%d Hz",
+                scan_freq / 10, scan_freq % 10
+            );
         } else {
-            // NOTE: This can be a sign if rotation is blocked.
-            RCLCPP_ERROR(get_logger(), "Unknown packet type: %02X", m_packet.type);
+            scan_data();
+            if (m_packet.type != SCAN_DATA) {
+                RCLCPP_WARN(get_logger(), "Unexpected packet type: %02X", m_packet.type);
+            }
         }
 
         m_state = SYNC0;
